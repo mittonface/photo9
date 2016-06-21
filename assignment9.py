@@ -162,10 +162,12 @@ def computeResponseCurve(intensity_samples, log_exposures, smoothing_lambda,
     in Ax=b).
 
     The first step is to fill in mat_A and mat_b with the constraints
-    described in the source paper. We recommend that you break it up into
-    three steps: filling in data-fitting constraints, smoothing
-    constraints, and color curve adjustment. The steps required are
-    described in detail below.
+    described in section 2.1 of the research paper, "Recovering High Dynamic
+    Range Radiance Maps from Photographs" by Debevec & Malik (available in
+    the course resources materail on T-Square). We recommend that you break
+    the process up into three steps: filling in data-fitting constraints,
+    filling in smoothing constraints, and adding the color curve adjustment
+    constraint. The steps required are described in detail below.
 
     PART 1: Constraints
 
