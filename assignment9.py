@@ -471,7 +471,7 @@ def readImages(image_dir, ext_list=[], resize=False):
     # image format of yours that is not listed (Make sure OpenCV can read it).
     extensions = ["bmp", "jpeg", "jpg", "png", "tif", "tiff"] + ext_list
     search_paths = [os.path.join(image_dir, '*.' + ext) for ext in extensions]
-    image_files = reduce(list.__add__, map(glob, search_paths))
+    image_files = reduce(list.__add__, sorted(map(glob, search_paths)))
     images = [cv2.imread(f, cv2.IMREAD_UNCHANGED | cv2.IMREAD_COLOR)
               for f in image_files]
 
