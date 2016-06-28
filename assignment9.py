@@ -63,10 +63,23 @@ def normalizeImage(img, dtype=np.uint8):
         out (numpy.ndarray): A grasycale or color image of dtype uint8, with
                              the shape of img, but values ranging from 0->255.
     """
-    out = np.array(img.shape)
-    # WRITE YOUR CODE HERE.
+    out = np.ndarray(shape = img.shape)
 
-    # END OF FUNCTION.
+
+
+    # find the minimum value in the image
+    min_val = np.min(img)
+    min_val_array = np.full(img.shape, min_val)
+
+    # make an array consisting of only this value so that I can subtract
+    out = np.subtract(img, min_val_array)
+
+    # get the max value
+    max_val = np.max(out)
+
+
+    out = np.multiply(out, (255./max_val))
+
     return out.astype(dtype)
 
 
@@ -91,9 +104,13 @@ def linearWeight(pixel_value, pixel_range_max=255):
     pixel_range_mid = 0.5 * (pixel_range_min + pixel_range_max)
     weight = 0.0
 
-    # WRITE YOUR CODE HERE.
 
-    # END OF FUNCTION.
+    # exacttly as in paper
+    if pixel_value <= pixel_range_mid:
+        weight = pixel_value - pixel_range_min
+    else:
+        weight = pixel_range_max - pixel_value
+
     return np.float64(weight)
 
 
@@ -148,10 +165,25 @@ def sampleIntensities(images, num_points):
     mid_img = images[mid]
 
     # WRITE YOUR CODE HERE.
+    for i in range(num_points):
+        # loop through all possible intensity values
+        matches = np.where(mid_img==i)
+        candidate_locations = []
+
+        if len(matches[0]) > 0:
+            # we have some matches, loop through them and save their location
+            for j in range(len(matches[0])):
+                candidate_locations.append((matches[0][j], matches[1][j]))
+
+        # choose uniformly at random from candidate locations
+        if len(candidate_locations) > 0:
+            choice = random.choice(candidate_locations)
+
+            for img in range(len(images)):
+                intensity_values[i][img] = images[img][choice[0]][choice[1]]
 
     # END OF FUNCTION.
     return intensity_values
-
 
 def computeResponseCurve(intensity_samples, log_exposures, smoothing_lambda,
                          weighting_function, intensity_range=255):
@@ -297,16 +329,103 @@ def computeResponseCurve(intensity_samples, log_exposures, smoothing_lambda,
     mat_b = np.zeros((mat_A.shape[0], 1), dtype=np.float64)
 
     # PART 1a: WRITE YOUR CODE HERE
-    # Create data-fitting constraints
+    '''
+                For each row i and column j in the intensity_samples array:
 
+                i.   Set mat_A at the (idx_ctr, pixel_value) to the value
+                     of the weighting function (wij)
+                ii.  Set mat_A at the (idx_ctr, pix_range + i) to the
+                     negative value of the weighting function (-wij)
+                iii. Set mat_b at (idx_ctr, 0) to the product of the value
+                     of the weighting function and the log of exposure j
+                     (wij * log_exposure[j])
+
+                     *  pixel_value is the value in intensity_samples at i, j
+                     ** idx_ctr should start at zero, and should increase
+                        by 1 each time the inner loop executes
+                     *** wij is the value of the weighting function for the
+                         pixel intensity value at (i,j)
+                         (wij = weighting_function(intensity_samples[i, j])
+                         '''
+
+
+    idx_ctr = 0
+    for i in range(len(intensity_samples)):
+        for j in range(len(intensity_samples[i])):
+            mat_A[idx_ctr][intensity_samples[i][j]] = weighting_function(intensity_samples[i][j])
+            mat_A[idx_ctr][intensity_range + i] = -weighting_function(intensity_samples[i][j])
+            mat_b[idx_ctr][0] = weighting_function(intensity_samples[i][j]) * log_exposures[j]
+            idx_ctr += 1
     # PART 1b: WRITE YOUR CODE HERE
     # Apply smoothing constraints throughout the pixel range
+            '''
+                For each value idx in the range (1...intensity_range - 1):
+
+                i.   Set mat_A at (offset + idx - 1, idx - 1) to the product
+                     of the smoothing lambda parameter and the value of the
+                     weighting function for idx.
+                     (smoothing_lambda * weighting_function(idx))
+                ii.  Set mat_A at (offset + idx - 1, idx) to -2 times the
+                     product of the smoothing lambda parameter and the value
+                     of the weighting function for idx.
+                     (-2 * smoothing_lambda * weighting_function(idx))
+                iii. Set mat_A at (offset + idx - 1, idx + 1) to the product
+                     of the smoothing lambda parameter and the value of the
+                     weighting function for idx.
+                     (smoothing_lambda * weighting_function(idx))
+                '''
+
+    for idx in range(1, intensity_range-1):
+        mat_A[offset + idx-1][idx-1] = smoothing_lambda * weighting_function(idx)
+        mat_A[offset + idx-1][idx] = -2 * smoothing_lambda * weighting_function(idx)
+        mat_A[offset + idx-1][idx+1] = smoothing_lambda * weighting_function(idx)
 
     # PART 1c: WRITE YOUR CODE HERE
     # Adjust color curve by adding a constraint for the middle pixel value
+    '''
+                This constraint corresponds to the assumption that middle value
+            pixels have unit exposure. This constraint is an equation that
+            is equal to zero, so there is no need to set any values in mat_b.
+
+            Set the value of mat_A in the last row and middle column
+            (mat_A.shape[0], intensity_range / 2) to the constant 1.
+    '''
+    mat_A[mat_A.shape[0]-1][intensity_range/2] = 1.
 
     # PART 2: WRITE YOUR CODE HERE
     # Solve the system using x = A^-1 * b
+
+    '''
+      In this part we do some simple linear algebra. We are solving the
+        function Ax=b. We want to solve for x. We have A and b.
+
+        Ax = b.
+        A^-1 * A * x = b.   (Note: the * multiply is the dot product here, but
+                             in Python it performs an element-wise
+                             multiplication so don't use it). What we want is
+                             something like: my_mat.dot(other_mat)
+        x = A^-1 * b.
+
+        Pretty simple: x is the inverse of A dot b. Now, it gets a little bit
+        more difficult because we can't obtain the inverse of a matrix that is
+        not square (there are more constraint equations than unknown variables
+        because the system is overdetermined). We can however use a different
+        method to find the least-squares fit.
+
+        This method is called the Moore-Penrose Pseudoinverse of a Matrix.
+
+        WHAT TO DO?
+        1a. Get the pseudoinverse of A. Numpy has an implementation of the
+            Moore-Penrose Pseudoinverse, so this is just a function call.
+
+        1b. Multiply that psuedoinverse -- dot -- b. This becomes x. Make sure
+            x is of the size 512 x 1.
+
+    '''
+
+    pseudo_inverse = np.linalg.pinv(mat_A)
+    x = np.dot(pseudo_inverse, mat_b)
+
 
     # STOP WRITING CODE HERE.
 
@@ -344,6 +463,10 @@ def computeRadianceMap(images, log_exposure_times, response_curve,
            exposure time for that image, divided by the sum of the weights
            for the current location
 
+           set
+             output (i,j ) to
+
+
            output[i][j] =
            sum(response_curve[pixel_vals] - log_exposure_times) / sum_weights
 
@@ -373,6 +496,25 @@ def computeRadianceMap(images, log_exposure_times, response_curve,
     img_rad_map = np.ones(img_shape, dtype=np.float64)
 
     # WRITE YOUR CODE HERE
+    for i in range(img_shape[0]):
+        for j in range(img_shape[1]):
+            pixel_vals = []
+            for img in images:
+                pixel_vals.append(img[i][j])
+
+            pixel_weights = []
+            for p in pixel_vals:
+                pixel_weights.append(weighting_function(p))
+
+            sum_pixels = sum(pixel_weights)
+
+            diff = []
+
+            for k in range(len(pixel_vals)):
+                diff.append(weighting_function(pixel_vals[k]) * (response_curve[pixel_vals[k]] - log_exposure_times[k]))
+
+            if sum_pixels > 0:
+                img_rad_map[i][j] = sum(diff) / sum_pixels
 
     # STOP WRITING CODE HERE.
     return img_rad_map
@@ -445,7 +587,6 @@ def computeHDR(images, log_exposure_times, pixel_range_max=255.0,
 
     return output
 
-
 def readImages(image_dir, ext_list=[], resize=False):
     """ This function reads in input images from a image directory
 
@@ -471,12 +612,15 @@ def readImages(image_dir, ext_list=[], resize=False):
     # image format of yours that is not listed (Make sure OpenCV can read it).
     extensions = ["bmp", "jpeg", "jpg", "png", "tif", "tiff"] + ext_list
     search_paths = [os.path.join(image_dir, '*.' + ext) for ext in extensions]
-    image_files = reduce(list.__add__, sorted(map(glob, search_paths)))
+    image_files = sorted(reduce(list.__add__, map(glob, search_paths)))
+
     images = [cv2.imread(f, cv2.IMREAD_UNCHANGED | cv2.IMREAD_COLOR)
               for f in image_files]
 
     if resize:
         images = [img[::4, ::4] for img in images]
+
+
 
     return images
 
@@ -486,8 +630,9 @@ if __name__ == "__main__":
     np.random.seed()
     image_dir = "input"
     images = readImages(image_dir, resize=False)
-    exposure_times = np.float64([1 / 160.0, 1 / 125.0, 1 / 80.0,
-                                 1 / 60.0, 1 / 40.0, 1 / 15.0])
+    exposure_times = np.float64([1 / 2500., 1 / 800.0, 1 / 400.0,
+                                 1 / 250.0, 1 / 200.0, 1 / 125.0,
+                                 1/60.0, 1/25.0, 1/13.0])
     log_exposure_times = np.log(exposure_times)
     hdr = computeHDR(images, log_exposure_times)
     cv2.imwrite("hdr.jpg", hdr)
